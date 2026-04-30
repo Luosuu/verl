@@ -635,4 +635,12 @@ class VeOmniEngineWithLMHead(VeOmniEngine, FSDPEngineWithLMHead):
             if sp_enabled:
                 model_inputs["position_ids"] = sp_shard_collator.sp_slice(model_inputs["position_ids"], dim=-1)
 
+        # Bridge verl's ``use_fused_kernels`` flag to the
+        # ``return_log_probs=True`` kwarg VeOmni's chunked-CE wrapper
+        # gates on. The inherited ``prepare_model_outputs`` already
+        # reads ``output.log_probs`` under the same flag.
+        use_fused_kernels = tu.get_non_tensor_data(data=micro_batch, key="use_fused_kernels", default=False)
+        if use_fused_kernels:
+            model_inputs["return_log_probs"] = True
+
         return model_inputs, output_args
