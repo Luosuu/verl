@@ -192,10 +192,10 @@ ci = [
     "sglang-router==0.2.2",  # router coverage in reward_model_sglang
 ]
 
-# veomni drives the SFT engine tests. Installed deps-free (empty requires-dist
+# veomni drives the PPO and SFT engine tests. Installed deps-free (empty requires-dist
 # in [[tool.uv.dependency-metadata]] below): its real metadata pins
 # datasets<=2.21.0, which would downgrade the shared datasets dependency.
-# SFT CI overlays transformers==5.16.1 for this pinned VeOmni revision.
+# VeOmni CI overlays transformers==5.16.1 for this pinned revision.
 veomni-sft = ["veomni==0.1.12"]
 
 # CI / unit tests / dev sanity. No GPU runtime.
@@ -413,7 +413,7 @@ requires-dist = []
 
 # veomni 0.1.12 (veomni-sft extra) is likewise installed deps-free: its metadata
 # pins datasets<=2.21.0, which would downgrade the shared datasets dependency.
-# The backend extras already supply the SFT tests' runtime dependencies.
+# The backend extras already supply the PPO/SFT tests' runtime dependencies.
 [[tool.uv.dependency-metadata]]
 name = "veomni"
 version = "0.1.12"
