@@ -5128,11 +5128,7 @@ wheels = [
 [[package]]
 name = "veomni"
 version = "0.1.12"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/e9/8a/148294b05a0bc9ca86c19f943a338c28cf3faaadb300b5530c4c26c7a4f0/veomni-0.1.12.tar.gz", hash = "sha256:628af23c60a6e2e4443407aaf2e1fc463ca0ca7d35c4ea255f2e85f5e0482d2b", size = 1574396, upload-time = "2026-09-09T04:21:43.419Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/53/ce/acff3d99b9d9c884ee81dd46b6fae3f9552558dce145b0cd7e88283ce8c9/veomni-0.1.12-py3-none-any.whl", hash = "sha256:682c0ae21b2a7835c928fb378ca740746778f5bcf5d7a64ca15718c58bf2316f", size = 1885489, upload-time = "2026-09-09T04:21:41.156Z" },
-]
+source = { git = "https://github.com/ByteDance-Seed/VeOmni.git?rev=10a26aca258f91a7af3e698cc0db8c6c51705989#10a26aca258f91a7af3e698cc0db8c6c51705989" }
 
 [[package]]
 name = "verl"
@@ -5532,7 +5528,7 @@ requires-dist = [
     { name = "trl", marker = "extra == 'fsdp'", specifier = "==0.27.0" },
     { name = "trl", marker = "extra == 'megatron'", specifier = "==0.27.0" },
     { name = "uvicorn", marker = "extra == 'verl-core'" },
-    { name = "veomni", marker = "extra == 'veomni-sft'", specifier = "==0.1.12" },
+    { name = "veomni", marker = "extra == 'veomni-sft'", git = "https://github.com/ByteDance-Seed/VeOmni.git?rev=10a26aca258f91a7af3e698cc0db8c6c51705989" },
     { name = "verl", extras = ["cupy-cu130"], marker = "extra == 'fsdp'" },
     { name = "verl", extras = ["cupy-cu130"], marker = "extra == 'megatron'" },
     { name = "verl", extras = ["flash-attn-cu130torch213"], marker = "extra == 'fsdp'" },

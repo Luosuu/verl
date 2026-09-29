@@ -116,8 +116,8 @@ jobs:
         run: |
           pip3 install -r requirements-test.txt
           pip3 install --no-deps -e .
-          pip3 install veomni==0.1.12 --ignore-requires-python --no-deps --index-url https://pypi.org/simple/
-          pip3 install transformers==5.9.0
+          pip3 install "veomni @ git+https://github.com/ByteDance-Seed/VeOmni.git@10a26aca258f91a7af3e698cc0db8c6c51705989" --ignore-requires-python --no-deps --index-url https://pypi.org/simple/
+          pip3 install transformers==5.16.1
       - name: Check final pip list
         run: |
           pip3 list

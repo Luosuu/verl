@@ -14,7 +14,7 @@
 """Exercise VeOmni engine initialization without a real distributed mesh.
 
 VeOmni is optional in CPU CI. Stub its import surfaces as in the router-replay
-engine tests, then model each parallel-state API explicitly in the tests.
+engine tests, then exercise the config-based parallel-state API explicitly in the tests.
 """
 
 import sys
@@ -96,38 +96,6 @@ def test_current_api_preserves_parallel_topology(
         fsdp_config=fsdp_config,
     )
     parallel_state.init_parallel_state_from_config.assert_called_once_with(accelerator, name=None)
-
-
-def test_current_api_takes_precedence_when_legacy_api_also_exists(monkeypatch, parallel_state):
-    parallel_state.init_parallel_state = MagicMock()
-    monkeypatch.setattr(transformer_impl, "AcceleratorConfig", MagicMock(return_value=SimpleNamespace(dp_size=8)))
-    monkeypatch.setattr(transformer_impl, "FSDPConfig", MagicMock())
-
-    _init_engine(monkeypatch, parallel_state)
-
-    parallel_state.init_parallel_state_from_config.assert_called_once()
-    parallel_state.init_parallel_state.assert_not_called()
-
-
-def test_legacy_api_remains_supported(monkeypatch):
-    parallel_state = SimpleNamespace(
-        get_parallel_state=MagicMock(return_value=SimpleNamespace(sp_enabled=False)),
-        init_parallel_state=MagicMock(),
-    )
-    make_accelerator = MagicMock()
-    monkeypatch.setattr(transformer_impl, "AcceleratorConfig", make_accelerator)
-
-    _init_engine(monkeypatch, parallel_state, fsdp_size=4, ulysses_parallel_size=2, expert_parallel_size=2)
-
-    parallel_state.init_parallel_state.assert_called_once_with(
-        dp_size=4,
-        dp_replicate_size=1,
-        dp_shard_size=4,
-        extra_parallel_sizes=(2,),
-        ulysses_size=2,
-        dp_mode="fsdp2",
-    )
-    make_accelerator.assert_not_called()
 
 
 def test_current_api_rejects_world_size_mismatch(monkeypatch, parallel_state):

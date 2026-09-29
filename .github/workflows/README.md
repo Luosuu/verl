@@ -159,6 +159,11 @@ Two cases the lock cannot express, and how they are handled:
 - **A one-step version matrix.** Use `uv run --with pkg==x.y`, which layers the
   version over the synced env for that step only. `model.yml` does this for
   transformers 4.54.1.
+- **VeOmni SFT.** The SFT LLM/VLM jobs use the git revision pinned in `uv.lock`
+  and `--with transformers==5.16.1` for its generated models. Keep that overlay
+  in each job's `UV_RUN` so all engines in the comparison use the same version.
+  The SFT scripts launch workers with `python -m torch.distributed.run` so the
+  overlay's interpreter is used rather than the base venv's `torchrun` shebang.
 - **A package that would poison the resolution.** `mlflow` caps `pandas<3` and
   `cryptography<49`, and `ci` shares one resolution fork with every backend, so
   locking it would drag the whole project back to pandas 2.x. `gpu_unit_tests.yml`

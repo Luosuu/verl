@@ -164,34 +164,23 @@ class VeOmniEngine(FSDPEngine):
             data_parallel_replicate_size = dp_size // fsdp_size
             data_parallel_shard_size = fsdp_size
 
-        if hasattr(parallel_state, "init_parallel_state_from_config"):
-            accelerator = AcceleratorConfig(
-                dp_replicate_size=data_parallel_replicate_size,
-                dp_shard_size=data_parallel_shard_size,
-                ep_size=self.engine_config.expert_parallel_size,
-                ulysses_size=self.engine_config.ulysses_parallel_size,
-                init_device=self.engine_config.init_device,
-                fsdp_config=FSDPConfig(fsdp_mode=self.data_parallel_mode),
+        accelerator = AcceleratorConfig(
+            dp_replicate_size=data_parallel_replicate_size,
+            dp_shard_size=data_parallel_shard_size,
+            ep_size=self.engine_config.expert_parallel_size,
+            ulysses_size=self.engine_config.ulysses_parallel_size,
+            init_device=self.engine_config.init_device,
+            fsdp_config=FSDPConfig(fsdp_mode=self.data_parallel_mode),
+        )
+        if accelerator.dp_size != dp_size:
+            raise ValueError(
+                f"VeOmni derived dp_size={accelerator.dp_size} from WORLD_SIZE, "
+                f"but the distributed process group requires dp_size={dp_size}."
             )
-            if accelerator.dp_size != dp_size:
-                raise ValueError(
-                    f"VeOmni derived dp_size={accelerator.dp_size} from WORLD_SIZE, "
-                    f"but the distributed process group requires dp_size={dp_size}."
-                )
-            # Actor and reference engines may initialize in the same process.
-            # Keep their meshes unnamed so the trainer's 'base' registry entry
-            # cannot cause a later engine's topology to be silently ignored.
-            parallel_state.init_parallel_state_from_config(accelerator, name=None)
-        else:
-            # Support VeOmni releases predating the config-based initializer.
-            parallel_state.init_parallel_state(
-                dp_size=dp_size,
-                dp_replicate_size=data_parallel_replicate_size,
-                dp_shard_size=data_parallel_shard_size,
-                extra_parallel_sizes=(self.engine_config.expert_parallel_size,),
-                ulysses_size=self.engine_config.ulysses_parallel_size,
-                dp_mode=self.data_parallel_mode,
-            )
+        # Actor and reference engines may initialize in the same process.
+        # Keep their meshes unnamed so the trainer's 'base' registry entry
+        # cannot cause a later engine's topology to be silently ignored.
+        parallel_state.init_parallel_state_from_config(accelerator, name=None)
 
         if self.engine_config.full_determinism:
             enable_full_determinism(seed=self.engine_config.seed)

@@ -7,7 +7,7 @@ mode=${mode:-spmd}
 
 if [ "$mode" = "spmd" ]; then
   ENTRYPOINT=${ENTRYPOINT:-"-m verl.trainer.sft_trainer"}
-  COMMAND="torchrun --standalone --nnodes=${NNODES:-1} --nproc-per-node=${NUM_GPUS:-1} ${ENTRYPOINT}"
+  COMMAND="python -m torch.distributed.run --standalone --nnodes=${NNODES:-1} --nproc-per-node=${NUM_GPUS:-1} ${ENTRYPOINT}"
 else
   ENTRYPOINT=${ENTRYPOINT:-"-m verl.trainer.sft_trainer_ray"}
   COMMAND="python ${ENTRYPOINT} trainer.nnodes=${NNODES:-1} trainer.n_gpus_per_node=${NUM_GPUS:-1}"

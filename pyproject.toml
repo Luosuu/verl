@@ -195,7 +195,7 @@ ci = [
 # veomni drives the SFT engine tests. Installed deps-free (empty requires-dist
 # in [[tool.uv.dependency-metadata]] below): its real metadata pins
 # datasets<=2.21.0, which would downgrade the shared datasets dependency.
-# This mirrors the `--no-deps` install the SFT workflows did by hand.
+# SFT CI overlays transformers==5.16.1 for this pinned VeOmni revision.
 veomni-sft = ["veomni==0.1.12"]
 
 # CI / unit tests / dev sanity. No GPU runtime.
@@ -446,6 +446,7 @@ apex                 = { index = "verl-wheelhouse" }
 flash-attn           = { index = "verl-wheelhouse" }
 transformer-engine   = { index = "verl-wheelhouse" }
 megatron-bridge      = { index = "verl-wheelhouse" }
+veomni              = { git = "https://github.com/ByteDance-Seed/VeOmni.git", rev = "10a26aca258f91a7af3e698cc0db8c6c51705989" }
 
 # megatron-core isn't in the wheelhouse; git-sourced (built at sync
 # time). The wheelhouse megatron-bridge 0.6.2 (v0.6.2 tag) pairs with
