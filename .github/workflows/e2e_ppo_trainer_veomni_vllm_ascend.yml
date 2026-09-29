@@ -113,8 +113,8 @@ jobs:
       - name: Install the current repository
         run: |
           pip install --no-deps -e .
-          pip install veomni==0.1.11 --ignore-requires-python --no-deps --index-url https://pypi.org/simple/
-          pip install transformers==5.5.3
+          pip install veomni==0.1.12 --ignore-requires-python --no-deps --index-url https://pypi.org/simple/
+          pip install transformers==5.9.0
       - name: Check final pip list
         run: |
           pip list

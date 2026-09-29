@@ -183,7 +183,7 @@ class VeOmniEngine(FSDPEngine):
             # cannot cause a later engine's topology to be silently ignored.
             parallel_state.init_parallel_state_from_config(accelerator, name=None)
         else:
-            # VeOmni 0.1.11, still used by the SFT extra and e2e CI.
+            # Support VeOmni releases predating the config-based initializer.
             parallel_state.init_parallel_state(
                 dp_size=dp_size,
                 dp_replicate_size=data_parallel_replicate_size,
