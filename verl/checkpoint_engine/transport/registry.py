@@ -27,6 +27,7 @@ whole read and check it is still valid afterwards (fencing). Leases expire on th
 so a crashed reader cannot pin a version forever.
 """
 
+import base64
 import time
 import uuid
 from abc import ABC, abstractmethod
@@ -91,6 +92,53 @@ class LeaseError(RuntimeError):
     """Raised when a lease cannot be acquired or renewed."""
 
 
+@dataclass
+class ReplicaInfo:
+    url: str
+    """Address the replica serves generation on."""
+    version: int
+    """Weight version the replica has loaded; -1 before its first load."""
+    last_seen: float
+    """Registry clock time of the replica's last report."""
+
+
+def manifest_to_dict(manifest: WeightManifest) -> dict[str, Any]:
+    """JSON-safe form of a manifest: bytes base64-encoded, dtypes by name."""
+    return {
+        "version": manifest.version,
+        "endpoint": base64.b64encode(manifest.endpoint).decode(),
+        "total_bytes": manifest.total_bytes,
+        "tensors": [
+            {"name": t.name, "shape": list(t.shape), "dtype": str(t.dtype).removeprefix("torch."), "offset": t.offset}
+            for t in manifest.tensors
+        ],
+        "buckets": [
+            {"offset": b.offset, "size": b.size, "remote_buffer": base64.b64encode(b.remote_buffer).decode()}
+            for b in manifest.buckets
+        ],
+        "extra": manifest.extra,
+    }
+
+
+def manifest_from_dict(data: dict[str, Any]) -> WeightManifest:
+    return WeightManifest(
+        version=data["version"],
+        endpoint=base64.b64decode(data["endpoint"]),
+        total_bytes=data["total_bytes"],
+        tensors=[
+            TensorSpec(
+                name=t["name"], shape=torch.Size(t["shape"]), dtype=getattr(torch, t["dtype"]), offset=t["offset"]
+            )
+            for t in data["tensors"]
+        ],
+        buckets=[
+            BucketDesc(offset=b["offset"], size=b["size"], remote_buffer=base64.b64decode(b["remote_buffer"]))
+            for b in data["buckets"]
+        ],
+        extra=data.get("extra", {}),
+    )
+
+
 class WeightRegistry(ABC):
     """Directory of published weight versions and the leases held on them."""
 
@@ -134,6 +182,14 @@ class WeightRegistry(ABC):
             True if the publisher may now overwrite the version's buffers.
         """
 
+    @abstractmethod
+    async def report_replica(self, replica_id: str, url: str, version: int):
+        """Record a rollout replica's address and loaded version; also serves as its heartbeat."""
+
+    @abstractmethod
+    async def list_replicas(self) -> dict[str, ReplicaInfo]:
+        """Every replica that has reported, by replica id."""
+
 
 class InMemoryWeightRegistry(WeightRegistry):
     """Registry held in a single process. Wrap it in a Ray actor with `RayWeightRegistry`.
@@ -147,6 +203,7 @@ class InMemoryWeightRegistry(WeightRegistry):
         self._manifests: dict[int, WeightManifest] = {}
         self._states: dict[int, VersionState] = {}
         self._leases: dict[str, Lease] = {}
+        self._replicas: dict[str, ReplicaInfo] = {}
 
     def _expire_leases(self):
         now = self._clock()
@@ -207,6 +264,12 @@ class InMemoryWeightRegistry(WeightRegistry):
         del self._manifests[version]
         return True
 
+    async def report_replica(self, replica_id: str, url: str, version: int):
+        self._replicas[replica_id] = ReplicaInfo(url=url, version=version, last_seen=self._clock())
+
+    async def list_replicas(self) -> dict[str, ReplicaInfo]:
+        return dict(self._replicas)
+
 
 class RayWeightRegistry(WeightRegistry):
     """Client of an `InMemoryWeightRegistry` running as a named Ray actor.
@@ -253,3 +316,9 @@ class RayWeightRegistry(WeightRegistry):
 
     async def try_reclaim(self, version: int) -> bool:
         return await self._actor.try_reclaim.remote(version)
+
+    async def report_replica(self, replica_id: str, url: str, version: int):
+        await self._actor.report_replica.remote(replica_id, url, version)
+
+    async def list_replicas(self) -> dict[str, ReplicaInfo]:
+        return await self._actor.list_replicas.remote()

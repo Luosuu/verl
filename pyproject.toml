@@ -268,6 +268,10 @@ cpu = [
     "pytest-rerunfailures",
 ]
 
+# Lets an official vLLM build load verl's weight transfer engines (set VLLM_PLUGINS=verl_transport_pull).
+[project.entry-points."vllm.general_plugins"]
+verl_transport_pull = "verl.workers.rollout.vllm_rollout.vllm_plugin:register"
+
 [tool.ruff]
 line-length = 120
 exclude = ["scripts/legacy_model_merger.py"]

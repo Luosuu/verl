@@ -20,10 +20,13 @@ from .registry import (
     Lease,
     LeaseError,
     RayWeightRegistry,
+    ReplicaInfo,
     TensorSpec,
     VersionState,
     WeightManifest,
     WeightRegistry,
+    manifest_from_dict,
+    manifest_to_dict,
 )
 
 __all__ = [
@@ -32,8 +35,11 @@ __all__ = [
     "Lease",
     "LeaseError",
     "RayWeightRegistry",
+    "ReplicaInfo",
     "TensorSpec",
     "VersionState",
     "WeightManifest",
     "WeightRegistry",
+    "manifest_from_dict",
+    "manifest_to_dict",
 ]
