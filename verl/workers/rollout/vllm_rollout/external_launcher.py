@@ -126,6 +126,9 @@ def build_vllm_command(vllm_args: list[str], host: str, port: int) -> tuple[list
     plugins = [name for name in env.get("VLLM_PLUGINS", "").split(",") if name]
     env["VLLM_PLUGINS"] = ",".join(plugins + [PLUGIN_NAME] if PLUGIN_NAME not in plugins else plugins)
     env["VLLM_SERVER_DEV_MODE"] = "1"
+    # Tools vLLM runs at startup (ninja for kernel builds) live next to the interpreter in a venv,
+    # which is not on PATH unless the venv was activated.
+    env["PATH"] = os.pathsep.join([os.path.dirname(sys.executable), env.get("PATH", "")])
     command = [
         sys.executable,
         "-m",
