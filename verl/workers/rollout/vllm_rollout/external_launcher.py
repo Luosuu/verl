@@ -141,6 +141,8 @@ def build_vllm_command(vllm_args: list[str], host: str, port: int) -> tuple[list
         str(port),
         "--weight-transfer-config",
         json.dumps({"backend": PLUGIN_NAME}),
+        # Token-in, token-out generation (/inference/v1/generate) is what verl's rollout clients call.
+        "--enable-scale-out",
     ]
     return command, env
 

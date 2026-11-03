@@ -24,7 +24,7 @@ Checked against vLLM 0.32, verl's pinned version:
 | --- | --- | --- |
 | Load our pull engine in every worker | Plugins in the `vllm.general_plugins` entry point group; `WeightTransferEngineFactory.register_engine`; engine selected with `--weight-transfer-config` | `VLLM_PLUGINS` selects which plugins load |
 | Update weights from outside | HTTP routes `/pause`, `/resume`, `/init_weight_transfer_engine`, `/start_weight_update`, `/update_weights`, `/finish_weight_update`, `/update_weight_version` | Mounted only with `VLLM_SERVER_DEV_MODE=1`, which also enables development endpoints |
-| Token-in, token-out generation | `POST /inference/v1/generate`: `token_ids` in; `token_ids`, per-token logprobs, `finish_reason` and `weight_versions` spans out | `finish_reason="abort"` marks requests cut by `/pause` |
+| Token-in, token-out generation | `POST /inference/v1/generate`: `token_ids` in; `token_ids`, per-token logprobs, `finish_reason` and `weight_versions` spans out | Needs `--enable-scale-out`; `finish_reason="abort"` marks requests cut by `/pause` |
 | Checkpoint-format reload | `initialize_layerwise_reload` / `model.load_weights` / `finalize_layerwise_reload` | The pattern vLLM's own IPC engine uses |
 
 ## Architecture
@@ -52,8 +52,8 @@ PromptDispatcher -- claim --> agent loop workers  --HTTP-->  vllm serve (officia
    the CUDA IPC hop disappear.
 3. **Launcher.** `python -m verl.workers.rollout.vllm_rollout.external_launcher` sets `VLLM_PLUGINS`
    and `VLLM_SERVER_DEV_MODE`, starts `vllm serve` with `--weight-transfer-config
-   '{"backend": "verl_transport_pull"}'` plus the user's vLLM arguments, waits for it to be healthy,
-   and runs the sidecar.
+   '{"backend": "verl_transport_pull"}'`, `--enable-scale-out` and the user's vLLM arguments, waits for
+   it to be healthy, and runs the sidecar.
 4. **Sidecar update agent.** The same policy as `WeightUpdateAgent`, driving vLLM's HTTP routes instead
    of Ray actors: when a newer version is ready, `/pause` (abort) → `/start_weight_update` →
    `/update_weights` → `/finish_weight_update` → `/update_weight_version` → `/resume`, then report the
