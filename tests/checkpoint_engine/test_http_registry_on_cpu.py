@@ -109,3 +109,20 @@ def test_publish_and_pull_through_http(server):
         await registry.close()
 
     asyncio.run(main())
+
+
+def test_client_survives_the_server_closing_idle_connections():
+    """The vLLM plugin keeps one client for the whole run, with updates seconds apart."""
+    server = RegistryServer(host="127.0.0.1", port=0, timeout_keep_alive=1)
+
+    async def main():
+        registry = HttpWeightRegistry(f"http://127.0.0.1:{server.port}")
+        await registry.publish(_manifest(1))
+        await asyncio.sleep(1.5)  # the server drops the idle connection
+        assert await registry.get_manifest(1) == _manifest(1)
+        await registry.close()
+
+    try:
+        asyncio.run(main())
+    finally:
+        server.stop()

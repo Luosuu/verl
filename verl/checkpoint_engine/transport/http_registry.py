@@ -116,9 +116,10 @@ class RegistryServer:
     Args:
         host: Interface to listen on.
         port: Port to listen on; 0 picks a free one.
+        timeout_keep_alive: Seconds the server keeps an idle client connection open.
     """
 
-    def __init__(self, host: str = "0.0.0.0", port: int = 0):
+    def __init__(self, host: str = "0.0.0.0", port: int = 0, timeout_keep_alive: int = 5):
         import uvicorn
 
         if port == 0:
@@ -126,7 +127,13 @@ class RegistryServer:
                 probe.bind((host, 0))
                 port = probe.getsockname()[1]
         self.registry = InMemoryWeightRegistry()
-        config = uvicorn.Config(build_registry_app(self.registry), host=host, port=port, log_level="warning")
+        config = uvicorn.Config(
+            build_registry_app(self.registry),
+            host=host,
+            port=port,
+            log_level="warning",
+            timeout_keep_alive=timeout_keep_alive,
+        )
         self._server = uvicorn.Server(config)
         self._thread = threading.Thread(target=self._server.run, daemon=True)
         self._thread.start()
@@ -167,7 +174,11 @@ class HttpWeightRegistry(WeightRegistry):
         # A session is bound to the event loop it was created on.
         loop = asyncio.get_running_loop()
         if self._session is None or self._loop is not loop:
-            self._session = aiohttp.ClientSession(timeout=self.timeout)
+            # No pooled connections: calls are seconds apart, and a pooled connection the server closed
+            # for being idle fails the next call with ServerDisconnectedError.
+            self._session = aiohttp.ClientSession(
+                timeout=self.timeout, connector=aiohttp.TCPConnector(force_close=True)
+            )
             self._loop = loop
         async with self._session.post(f"{self.url}/{route}", json=body or {}) as response:
             if response.status == _LEASE_ERROR_STATUS:
