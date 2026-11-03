@@ -21,6 +21,7 @@ serve it on a network only the trainer and rollout nodes can reach.
 import asyncio
 import socket
 import threading
+import time
 from dataclasses import asdict
 from typing import Annotated, Any
 
@@ -130,6 +131,12 @@ class RegistryServer:
         self._thread = threading.Thread(target=self._server.run, daemon=True)
         self._thread.start()
         self.port = port
+        # Return only once clients can connect.
+        deadline = time.monotonic() + 30
+        while not self._server.started:
+            if not self._thread.is_alive() or time.monotonic() > deadline:
+                raise RuntimeError(f"Weight registry server failed to start on {host}:{port}")
+            time.sleep(0.01)
 
     def address(self) -> str:
         """`http://<node ip>:<port>`, as seen from other nodes."""

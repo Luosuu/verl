@@ -14,7 +14,6 @@
 """The weight registry over HTTP: serialization, every route, and a publish/pull round trip."""
 
 import asyncio
-import time
 
 import pytest
 import torch
@@ -50,15 +49,7 @@ def _manifest(version):
 @pytest.fixture
 def server():
     server = RegistryServer(host="127.0.0.1", port=0)
-    url = f"http://127.0.0.1:{server.port}"
-    # uvicorn starts in a background thread.
-    for _ in range(100):
-        try:
-            asyncio.run(HttpWeightRegistry(url).list_replicas())
-            break
-        except Exception:
-            time.sleep(0.05)
-    yield url
+    yield f"http://127.0.0.1:{server.port}"
     server.stop()
 
 
