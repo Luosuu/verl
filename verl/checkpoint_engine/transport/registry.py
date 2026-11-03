@@ -98,8 +98,8 @@ class ReplicaInfo:
     """Address the replica serves generation on."""
     version: int
     """Weight version the replica has loaded; -1 before its first load."""
-    last_seen: float
-    """Registry clock time of the replica's last report."""
+    age: float
+    """Seconds since the replica's last report, when the registry was asked."""
 
 
 def manifest_to_dict(manifest: WeightManifest) -> dict[str, Any]:
@@ -203,7 +203,8 @@ class InMemoryWeightRegistry(WeightRegistry):
         self._manifests: dict[int, WeightManifest] = {}
         self._states: dict[int, VersionState] = {}
         self._leases: dict[str, Lease] = {}
-        self._replicas: dict[str, ReplicaInfo] = {}
+        # replica id -> (url, version, registry clock time of the last report)
+        self._replicas: dict[str, tuple[str, int, float]] = {}
 
     def _expire_leases(self):
         now = self._clock()
@@ -265,10 +266,14 @@ class InMemoryWeightRegistry(WeightRegistry):
         return True
 
     async def report_replica(self, replica_id: str, url: str, version: int):
-        self._replicas[replica_id] = ReplicaInfo(url=url, version=version, last_seen=self._clock())
+        self._replicas[replica_id] = (url, version, self._clock())
 
     async def list_replicas(self) -> dict[str, ReplicaInfo]:
-        return dict(self._replicas)
+        now = self._clock()
+        return {
+            replica_id: ReplicaInfo(url=url, version=version, age=now - last_seen)
+            for replica_id, (url, version, last_seen) in self._replicas.items()
+        }
 
 
 class RayWeightRegistry(WeightRegistry):

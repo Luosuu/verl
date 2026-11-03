@@ -277,6 +277,26 @@ trainer:
       # Seconds between TransferQueue polls of the prompt dispatcher.
       dispatch_poll_interval: 0.2
 
+      # Rollout on official vLLM servers started outside this Ray job by
+      # verl.workers.rollout.vllm_rollout.external_launcher. The trainer serves the weight
+      # registry over HTTP and waits for the servers to register with it.
+      external_rollout:
+
+        # Whether to use external rollout servers instead of launching replicas.
+        enable: false
+
+        # Port of the weight registry server; 0 picks a free one (the URL is logged).
+        registry_port: 0
+
+        # Rollout servers to wait for before training starts.
+        min_replicas: 1
+
+        # Seconds to wait for them.
+        wait_timeout: 1800
+
+        # A server that has not reported for this many seconds is treated as failed.
+        heartbeat_timeout: 60
+
     # Asynchronous PPO trainer with separate trainer and rollout
     separate_async:
 

@@ -90,10 +90,22 @@ class HttpReplicaUpdateAgent(WeightUpdateAgent):
                 if response.status >= 400:
                     raise RuntimeError(f"POST /{route} failed with {response.status}: {await response.text()}")
 
-    async def initialize(self):
-        """Point the server's pull engine at the registry; call once before `run`."""
+    async def initialize(self, registry_timeout: float = 3600.0):
+        """Point the server's pull engine at the registry and register; call once before `run`.
+
+        Waits for the registry to come up, so servers can be started before the trainer.
+        """
         await self._post("init_weight_transfer_engine", {"init_info": self.init_info})
-        await self._heartbeat()
+        deadline = time.monotonic() + registry_timeout
+        while True:
+            try:
+                await self._heartbeat()
+                return
+            except (aiohttp.ClientError, OSError) as e:
+                if time.monotonic() > deadline:
+                    raise TimeoutError(f"Weight registry unreachable for {registry_timeout}s") from e
+                logger.info(f"Waiting for the weight registry: {e}")
+                await asyncio.sleep(5)
 
     async def _heartbeat(self):
         await self.registry.report_replica(self.replica_id, self.server_url, self.version)

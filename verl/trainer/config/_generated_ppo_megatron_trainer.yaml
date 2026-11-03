@@ -1018,6 +1018,12 @@ trainer:
       init_timeout: 600
       max_inflight_prompts: null
       dispatch_poll_interval: 0.2
+      external_rollout:
+        enable: false
+        registry_port: 0
+        min_replicas: 1
+        wait_timeout: 1800
+        heartbeat_timeout: 60
     separate_async:
       num_warmup_batches: 1
       parameter_sync_step: 4
