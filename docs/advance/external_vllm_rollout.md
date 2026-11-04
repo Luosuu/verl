@@ -29,22 +29,7 @@ Checked against vLLM 0.32, verl's pinned version:
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    subgraph job["Trainer Ray job"]
-        T["Trainer"] -->|"publish(v)"| R[("Weight registry over HTTP<br/>versions, leases, replicas")]
-        T -->|"enqueue prompts"| TQ[("TransferQueue")]
-        D["Prompt dispatcher"] -->|"claim"| TQ
-        D -->|"replica versions"| R
-        D -->|"start generation"| L["Agent loop workers<br/>HttpServerHandle"]
-    end
-    subgraph node["Rollout node, no Ray"]
-        S["Launcher sidecar"] -->|"/pause, /update_weights, /resume"| V["vllm serve<br/>with verl_transport_pull"]
-    end
-    S -->|"poll, report version"| R
-    L -->|"/inference/v1/generate"| V
-    T -. "one-sided READ of host slots, issued by vLLM" .-> V
-```
+![External vLLM rollout architecture](../_static/decoupled_async/external_vllm_rollout_architecture.svg)
 
 1. **Registry over HTTP.** The trainer serves the existing `InMemoryWeightRegistry` over HTTP. The same
    service is a replica directory: each sidecar reports its server URL and loaded version, with a

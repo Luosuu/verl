@@ -19,24 +19,7 @@ The trainer never pauses, aborts or waits for rollout.
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    subgraph trainer["Trainer"]
-        T["Trainer rank 0"] -->|"copy, fp32 to bf16"| P["WeightPublisher<br/>versioned host slots"]
-        T -->|"enqueue pending prompts<br/>with min_weight_version"| TQ[("TransferQueue")]
-    end
-    P -->|"publish(v): manifest"| R[("WeightRegistry<br/>versions and leases")]
-    subgraph replica["Rollout replica"]
-        A["WeightUpdateAgent"] -->|"prefetch, then apply"| W["CheckpointEngineWorker<br/>transport_pull"]
-        W -->|"CUDA IPC"| V["vLLM"]
-    end
-    A -->|"latest_ready, lease"| R
-    P -. "one-sided READ, issued by the worker" .-> W
-    D["PromptDispatcher"] -->|"claim once every replica<br/>has the version"| TQ
-    D -->|"loaded versions"| A
-    D -->|"start generation"| L["Agent loop workers"]
-    L --> V
-```
+![decoupled_async architecture](../_static/decoupled_async/decoupled_async_architecture.svg)
 
 | Component | Role |
 | --- | --- |
