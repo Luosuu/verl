@@ -19,18 +19,23 @@ The trainer never pauses, aborts or waits for rollout.
 
 ## Architecture
 
-```
-trainer rank 0 --copy--> WeightPublisher (versioned host slots, registered once)
-                              | publish(v): manifest {version, layout, descriptors, endpoint}
-                              v
-                       WeightRegistry  <-- latest_ready / lease --  WeightUpdateAgent (per replica)
-                                                                        | prefetch, then apply
-                                                                        v
-                     CheckpointEngineWorker (transport_pull) -- one-sided READ --> host mirror --> vLLM
-
-trainer --enqueue pending prompts (min_weight_version)--> TransferQueue
-                                                              ^
-                       PromptDispatcher -- claim when every replica has the version --> agent loop workers
+```mermaid
+flowchart LR
+    subgraph trainer["Trainer"]
+        T["Trainer rank 0"] -->|"copy, fp32 to bf16"| P["WeightPublisher<br/>versioned host slots"]
+        T -->|"enqueue pending prompts<br/>with min_weight_version"| TQ[("TransferQueue")]
+    end
+    P -->|"publish(v): manifest"| R[("WeightRegistry<br/>versions and leases")]
+    subgraph replica["Rollout replica"]
+        A["WeightUpdateAgent"] -->|"prefetch, then apply"| W["CheckpointEngineWorker<br/>transport_pull"]
+        W -->|"CUDA IPC"| V["vLLM"]
+    end
+    A -->|"latest_ready, lease"| R
+    P -. "one-sided READ, issued by the worker" .-> W
+    D["PromptDispatcher"] -->|"claim once every replica<br/>has the version"| TQ
+    D -->|"loaded versions"| A
+    D -->|"start generation"| L["Agent loop workers"]
+    L --> V
 ```
 
 | Component | Role |
