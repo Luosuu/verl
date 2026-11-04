@@ -121,6 +121,7 @@ def manifest_to_dict(manifest: WeightManifest) -> dict[str, Any]:
 
 
 def manifest_from_dict(data: dict[str, Any]) -> WeightManifest:
+    """Inverse of `manifest_to_dict`."""
     return WeightManifest(
         version=data["version"],
         endpoint=base64.b64decode(data["endpoint"]),
