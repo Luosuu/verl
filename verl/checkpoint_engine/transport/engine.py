@@ -53,6 +53,8 @@ class TransportPullCheckpointEngine(CheckpointEngine):
             "bfloat16"; None sends them as the trainer produces them.
         lease_ttl: Reader lease duration in seconds.
         registry_name: Ray actor name of the shared registry.
+        registry_url: URL of an HTTP weight registry (`RegistryServer`); replaces the Ray actor when set,
+            for rollout servers outside the Ray job.
         wait_timeout: Seconds a rollout worker waits for the requested version to be published.
         is_master: Whether this is trainer rank 0, the only publisher.
         transport_factory: Override of transport construction, for tests.
@@ -67,6 +69,7 @@ class TransportPullCheckpointEngine(CheckpointEngine):
         rollout_dtype: torch.dtype | str | None = torch.bfloat16,
         lease_ttl: float = 60.0,
         registry_name: str = "verl_weight_registry",
+        registry_url: str | None = None,
         wait_timeout: float = 600.0,
         is_master: bool = False,
         transport_factory: TransportFactory = default_transport_factory,
@@ -78,6 +81,7 @@ class TransportPullCheckpointEngine(CheckpointEngine):
         self.rollout_dtype = getattr(torch, rollout_dtype) if isinstance(rollout_dtype, str) else rollout_dtype
         self.lease_ttl = lease_ttl
         self.registry_name = registry_name
+        self.registry_url = registry_url
         self.wait_timeout = wait_timeout
         self.is_master = is_master
         self.transport_factory = transport_factory
@@ -91,7 +95,12 @@ class TransportPullCheckpointEngine(CheckpointEngine):
     @property
     def registry(self):
         if self._registry is None:
-            self._registry = RayWeightRegistry(name=self.registry_name)
+            if self.registry_url:
+                from .http_registry import HttpWeightRegistry
+
+                self._registry = HttpWeightRegistry(self.registry_url)
+            else:
+                self._registry = RayWeightRegistry(name=self.registry_name)
         return self._registry
 
     def prepare(self) -> dict:

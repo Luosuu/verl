@@ -77,6 +77,7 @@ class WeightUpdateAgent:
         """Poll and update until `stop`. Re-raises the error that stopped it, if any."""
         try:
             while not self._stopped:
+                await self._heartbeat()
                 manifest = await self.registry.latest_ready()
                 if manifest is not None and self._should_update(manifest.version):
                     await self._update(manifest.version)
@@ -96,16 +97,18 @@ class WeightUpdateAgent:
             return True
         return newest - self.version >= self.min_version_lag
 
-    async def _update(self, version: int):
-        start = time.perf_counter()
-        prefetched = await asyncio.gather(*[w.prefetch_weights.remote(version) for w in self.workers])
-        if not all(prefetched):
-            # Retired or torn on some worker: a newer version is already out, take that one instead.
-            return
-        prefetch_done = time.perf_counter()
+    async def _heartbeat(self):
+        """Called on every poll; replicas outside the trainer's Ray job report themselves here."""
 
-        # From here on generation is paused. A failure leaves the replica paused rather than
-        # serving a mix of old and new weights.
+    async def _prefetch(self, version: int) -> bool:
+        """Pull `version` while the replica keeps generating; False to skip it for a newer one."""
+        prefetched = await asyncio.gather(*[w.prefetch_weights.remote(version) for w in self.workers])
+        # Retired or torn on some worker: a newer version is already out, take that one instead.
+        return all(prefetched)
+
+    async def _apply(self, version: int):
+        """Load `version` into the replica. A failure leaves the replica paused rather than serving a
+        mix of old and new weights."""
         await asyncio.gather(*[s.abort_all_requests.remote(reset_prefix_cache=True) for s in self.servers])
         await self.servers[0].wait_for_requests_to_drain.remote()
         await asyncio.gather(*[s.release_kv_cache.remote() for s in self.servers])
@@ -113,6 +116,13 @@ class WeightUpdateAgent:
         await asyncio.gather(*[s.resume_kv_cache.remote() for s in self.servers])
         await self.servers[0].resume_engine_generation.remote()
         await asyncio.gather(*[s.open_submission_gate.remote() for s in self.servers])
+
+    async def _update(self, version: int):
+        start = time.perf_counter()
+        if not await self._prefetch(version):
+            return
+        prefetch_done = time.perf_counter()
+        await self._apply(version)
         done = time.perf_counter()
 
         self.metrics = {
@@ -128,6 +138,7 @@ class WeightUpdateAgent:
         async with self._version_changed:
             self.version = version
             self._version_changed.notify_all()
+        await self._heartbeat()
 
     async def wait_for_version(self, version: int, timeout: float | None = None) -> int:
         """Block until the replica has loaded `version` or newer; returns the loaded version.

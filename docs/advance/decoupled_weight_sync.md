@@ -19,19 +19,7 @@ The trainer never pauses, aborts or waits for rollout.
 
 ## Architecture
 
-```
-trainer rank 0 --copy--> WeightPublisher (versioned host slots, registered once)
-                              | publish(v): manifest {version, layout, descriptors, endpoint}
-                              v
-                       WeightRegistry  <-- latest_ready / lease --  WeightUpdateAgent (per replica)
-                                                                        | prefetch, then apply
-                                                                        v
-                     CheckpointEngineWorker (transport_pull) -- one-sided READ --> host mirror --> vLLM
-
-trainer --enqueue pending prompts (min_weight_version)--> TransferQueue
-                                                              ^
-                       PromptDispatcher -- claim when every replica has the version --> agent loop workers
-```
+![decoupled_async architecture](../_static/decoupled_async/decoupled_async_architecture.svg)
 
 | Component | Role |
 | --- | --- |

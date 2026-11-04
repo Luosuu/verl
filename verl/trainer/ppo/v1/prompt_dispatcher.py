@@ -48,6 +48,9 @@ class PromptDispatcher:
     Args:
         agent_loop_workers: Handles of the AgentLoopWorkerTQ actors that run generation.
         update_agents: Handles of the replicas' WeightUpdateAgent actors, for their loaded versions.
+        registry_url: Instead of `update_agents`, read loaded versions from the replica directory of the
+            HTTP weight registry at this URL (rollout servers outside the Ray job).
+        heartbeat_timeout: With `registry_url`, a replica that has not reported for this long has failed.
         partition_id: TransferQueue partition holding the prompts.
         max_inflight_prompts: Cap on claimed groups that are not finished yet; None for no cap.
         poll_interval: Seconds between TransferQueue polls.
@@ -60,6 +63,8 @@ class PromptDispatcher:
         partition_id: str = "train",
         max_inflight_prompts: int | None = None,
         poll_interval: float = 0.2,
+        registry_url: str | None = None,
+        heartbeat_timeout: float = 60.0,
     ):
         assert agent_loop_workers, "need at least one agent loop worker"
         assert max_inflight_prompts is None or max_inflight_prompts > 0
@@ -69,6 +74,12 @@ class PromptDispatcher:
         self.partition_id = partition_id
         self.max_inflight_prompts = max_inflight_prompts
         self.poll_interval = poll_interval
+        self.heartbeat_timeout = heartbeat_timeout
+        self.registry = None
+        if registry_url:
+            from verl.checkpoint_engine.transport.http_registry import HttpWeightRegistry
+
+            self.registry = HttpWeightRegistry(registry_url)
 
         self._inflight: set[str] = set()
         self._next_worker = 0
@@ -88,6 +99,12 @@ class PromptDispatcher:
             raise
 
     async def _loaded_version(self) -> int:
+        if self.registry is not None:
+            replicas = await self.registry.list_replicas()
+            stale = [replica_id for replica_id, info in replicas.items() if info.age > self.heartbeat_timeout]
+            if stale:
+                raise RuntimeError(f"Rollout replicas stopped reporting: {stale}")
+            return min((info.version for info in replicas.values()), default=-1)
         states = await asyncio.gather(*[agent.get_state.remote() for agent in self.update_agents])
         if any(state["failed"] for state in states):
             raise RuntimeError("A weight update agent failed; its replica cannot reach new versions")

@@ -154,3 +154,39 @@ def test_failed_update_agent_stops_dispatch(tq_init, partition_id):
         assert dispatcher.get_state()["failed"]
 
     asyncio.run(main())
+
+
+def test_gates_on_versions_from_the_http_registry(tq_init, partition_id):
+    """With external rollout servers, loaded versions and liveness come from the registry's replica directory."""
+    from verl.checkpoint_engine.transport.http_registry import HttpWeightRegistry, RegistryServer
+
+    server = RegistryServer(host="127.0.0.1", port=0)
+    url = f"http://127.0.0.1:{server.port}"
+
+    async def main():
+        registry = HttpWeightRegistry(url)
+        workers = [_Worker()]
+        dispatcher = PromptDispatcher(
+            workers, [], partition_id=partition_id, poll_interval=0.01, registry_url=url, heartbeat_timeout=0.5
+        )
+        uids = _enqueue(partition_id, global_steps=3, min_weight_version=2)
+
+        await registry.report_replica("a", "http://a", 2)
+        await registry.report_replica("b", "http://b", 1)
+        assert await dispatcher.dispatch_once() == 0
+        await registry.report_replica("b", "http://b", 2)
+        assert await dispatcher.dispatch_once() == 1
+        assert workers[0].uids == uids
+
+        # Replica "a" stops reporting.
+        await asyncio.sleep(0.6)
+        await registry.report_replica("b", "http://b", 2)
+        with pytest.raises(RuntimeError, match="stopped reporting"):
+            await dispatcher.dispatch_once()
+        await registry.close()
+        await dispatcher.registry.close()
+
+    try:
+        asyncio.run(main())
+    finally:
+        server.stop()

@@ -11,8 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import asyncio
 import logging
 import os
+import time
 
 import ray
 import transfer_queue as tq
@@ -49,7 +51,10 @@ class PPOTrainerDecoupledAsync(StandaloneRolloutMixin, PPOTrainer):
             "decoupled_async needs actor_rollout_ref.rollout.checkpoint_engine.backend=transport_pull"
         )
         assert rollout.name == "vllm", "decoupled_async supports vLLM rollout only"
-        assert rollout.nnodes > 0 and rollout.n_gpus_per_node > 0, "decoupled_async needs standalone rollout GPUs"
+        external = mode_config.get("external_rollout", None)
+        self._external_rollout = bool(external and external.get("enable", False))
+        if not self._external_rollout:
+            assert rollout.nnodes > 0 and rollout.n_gpus_per_node > 0, "decoupled_async needs standalone rollout GPUs"
         train_batch_size = config.data.train_batch_size
         ppo_mini_batch_size = config.actor_rollout_ref.actor.ppo_mini_batch_size
         assert train_batch_size == mode_config.parameter_sync_step * ppo_mini_batch_size, (
@@ -65,6 +70,10 @@ class PPOTrainerDecoupledAsync(StandaloneRolloutMixin, PPOTrainer):
             assert config.reward.reward_model.enable_resource_pool, (
                 "decoupled_async needs a standalone reward model (reward.reward_model.enable_resource_pool=True)"
             )
+        self.registry_url = None
+        self._registry_server = None
+        if self._external_rollout:
+            self._registry_server, self.registry_url = self._start_registry_server(config, external)
         super().__init__(config)
         self.mode_config = mode_config
         self._published_version = -1
@@ -73,12 +82,86 @@ class PPOTrainerDecoupledAsync(StandaloneRolloutMixin, PPOTrainer):
         self.prompt_dispatcher = None
         self._prompt_dispatcher_run = None
 
+    @staticmethod
+    def _start_registry_server(config: DictConfig, external: DictConfig):
+        """Serve the weight registry over HTTP and point the publisher at it; returns (actor, url)."""
+        from omegaconf import open_dict
+
+        from verl.checkpoint_engine.transport.http_registry import RegistryServer
+
+        server = ray.remote(RegistryServer).options(num_cpus=0).remote(port=external.registry_port)
+        url = ray.get(server.address.remote())
+        engine_kwargs = config.actor_rollout_ref.rollout.checkpoint_engine.engine_kwargs
+        with open_dict(engine_kwargs):
+            transport_pull = dict(engine_kwargs.get("transport_pull", {}) or {})
+            transport_pull["registry_url"] = url
+            engine_kwargs["transport_pull"] = transport_pull
+        logger.warning(
+            f"Weight registry at {url}. Start rollout servers with: python -m "
+            f"verl.workers.rollout.vllm_rollout.external_launcher --registry-url {url} -- <model> <vllm serve args>"
+        )
+        return server, url
+
     def _setup(self):
         super()._setup()
-        self._setup_standalone_rollout()
-        self._start_weight_update_agents()
+        if self._external_rollout:
+            self._setup_external_rollout()
+        else:
+            self._setup_standalone_rollout()
+            self._start_weight_update_agents()
         # A failed agent or dispatcher stops new samples; fail the job instead of waiting in sample().
         self.replay_buffer.health_check_fn = self._check_rollout
+
+    def _registry_call(self, method: str, *args):
+        """Call the HTTP weight registry from synchronous trainer code."""
+        from verl.checkpoint_engine.transport.http_registry import HttpWeightRegistry
+
+        async def call():
+            registry = HttpWeightRegistry(self.registry_url)
+            try:
+                return await getattr(registry, method)(*args)
+            finally:
+                await registry.close()
+
+        return asyncio.run(call())
+
+    def _setup_external_rollout(self) -> None:
+        """Wait for rollout servers started by the external launcher, then generate through them."""
+        from verl.workers.rollout.external_server import ExternalServerManager
+
+        external = self.mode_config.external_rollout
+        deadline = time.monotonic() + external.wait_timeout
+        while True:
+            replicas = self._registry_call("list_replicas")
+            if len(replicas) >= external.min_replicas:
+                break
+            if time.monotonic() > deadline:
+                raise TimeoutError(f"{len(replicas)} of {external.min_replicas} rollout servers registered")
+            logger.warning(f"Waiting for rollout servers: {len(replicas)} of {external.min_replicas} registered")
+            time.sleep(10)
+        urls = sorted(info.url for info in replicas.values())
+        logger.warning(f"Rollout on external vLLM servers: {urls}")
+        self.standalone_server_manager = ExternalServerManager(self.config, urls)
+
+    def _replica_versions(self) -> list[int]:
+        if self._external_rollout:
+            return [info.version for info in self._registry_call("list_replicas").values()]
+        return [
+            state["version"] for state in ray.get([agent.get_state.remote() for agent in self.weight_update_agents])
+        ]
+
+    def _wait_for_replicas(self, version: int) -> None:
+        """Block until every replica serves `version` or newer."""
+        timeout = self.mode_config.init_timeout
+        if not self._external_rollout:
+            ray.get([agent.wait_for_version.remote(version, timeout) for agent in self.weight_update_agents])
+            return
+        deadline = time.monotonic() + timeout
+        while min(self._replica_versions(), default=-1) < version:
+            self._check_rollout()
+            if time.monotonic() > deadline:
+                raise TimeoutError(f"Rollout servers did not load version {version} within {timeout}s")
+            time.sleep(0.5)
 
     def _start_weight_update_agents(self) -> None:
         from verl.checkpoint_engine.transport.update_agent import WeightUpdateAgent
@@ -106,6 +189,8 @@ class PPOTrainerDecoupledAsync(StandaloneRolloutMixin, PPOTrainer):
             update_agents=self.weight_update_agents,
             max_inflight_prompts=self.mode_config.max_inflight_prompts,
             poll_interval=self.mode_config.dispatch_poll_interval,
+            registry_url=self.registry_url,
+            heartbeat_timeout=self._heartbeat_timeout(),
         )
         self._prompt_dispatcher_run = self.prompt_dispatcher.run.remote()
 
@@ -115,11 +200,22 @@ class PPOTrainerDecoupledAsync(StandaloneRolloutMixin, PPOTrainer):
             runs.append(self._prompt_dispatcher_run)
         return runs
 
+    def _heartbeat_timeout(self) -> float:
+        external = self.mode_config.get("external_rollout", None)
+        return float(external.heartbeat_timeout) if external else 60.0
+
     def _check_rollout(self) -> None:
-        finished, _ = ray.wait(self._rollout_runs(), num_returns=1, timeout=0)
-        if finished:
-            ray.get(finished)  # re-raises the actor's error
-            raise RuntimeError("A weight update agent or the prompt dispatcher exited unexpectedly")
+        runs = self._rollout_runs()
+        if runs:
+            finished, _ = ray.wait(runs, num_returns=1, timeout=0)
+            if finished:
+                ray.get(finished)  # re-raises the actor's error
+                raise RuntimeError("A weight update agent or the prompt dispatcher exited unexpectedly")
+        if self._external_rollout:
+            replicas = self._registry_call("list_replicas")
+            stale = [replica_id for replica_id, info in replicas.items() if info.age > self._heartbeat_timeout()]
+            if stale:
+                raise RuntimeError(f"Rollout servers stopped reporting: {stale}")
 
     def _min_weight_version(self) -> int:
         # Replicas may trail the newest version by min_version_lag - 1 before they update.
@@ -130,8 +226,10 @@ class PPOTrainerDecoupledAsync(StandaloneRolloutMixin, PPOTrainer):
         self._check_rollout()
         ray.get(self.actor_rollout_wg.update_weights(global_steps=self.global_steps))
         self._published_version = self.global_steps
-        states = ray.get([agent.get_state.remote() for agent in self.weight_update_agents])
-        versions = [state["version"] for state in states]
+        states = (
+            [] if self._external_rollout else ray.get([agent.get_state.remote() for agent in self.weight_update_agents])
+        )
+        versions = self._replica_versions()
         metrics = {
             "weight_update/published_version": self.global_steps,
             "weight_update/min_replica_version": min(versions),
@@ -196,16 +294,12 @@ class PPOTrainerDecoupledAsync(StandaloneRolloutMixin, PPOTrainer):
     def on_init_end(self):
         self._publish_weights()
         # Generation must not start on weights older than the checkpoint that was loaded.
-        timeout = self.mode_config.init_timeout
-        ray.get([agent.wait_for_version.remote(self.global_steps, timeout) for agent in self.weight_update_agents])
+        self._wait_for_replicas(self.global_steps)
 
     def on_validate_begin(self):
         # Validation sends prompts straight to the agent loop workers, without the dispatcher's version
         # gating, so first make every replica serve the weights being validated.
-        timeout = self.mode_config.init_timeout
-        ray.get(
-            [agent.wait_for_version.remote(self._published_version, timeout) for agent in self.weight_update_agents]
-        )
+        self._wait_for_replicas(self._published_version)
 
     def on_train_begin(self):
         self._start_prompt_dispatcher()

@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="430" viewBox="0 0 680 430" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" role="img">
+<title>External vLLM rollout architecture</title>
+<desc>The trainer Ray job holds the trainer, an HTTP weight registry, TransferQueue and the prompt dispatcher with agent loops. A separate rollout node runs the launcher sidecar and an official vllm serve with verl's plugin. The sidecar polls and reports to the registry, agent loops call vLLM over HTTP, and the plugin pulls weights from the trainer with one-sided RDMA reads.</desc>
+<defs><marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#5F5E5A" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker><marker id="w" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#D85A30" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<rect width="680" height="430" fill="#FFFFFF"/>
+<rect x="20" y="30" width="290" height="345" rx="16" fill="none" stroke="#888780" stroke-width="1" stroke-dasharray="5 4"/>
+<text x="40" y="55" font-size="14" font-weight="600" fill="#2C2C2A">Trainer Ray job</text>
+<rect x="380" y="30" width="280" height="345" rx="16" fill="none" stroke="#888780" stroke-width="1" stroke-dasharray="5 4"/>
+<text x="400" y="55" font-size="14" font-weight="600" fill="#2C2C2A">Rollout node, outside Ray</text>
+<rect x="36" y="75" width="258" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1"/>
+<text x="165.0" y="94.0" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="600" fill="#3C3489">Trainer</text>
+<text x="165.0" y="114.0" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#534AB7">Publishes weights, enqueues prompts</text>
+<rect x="36" y="151" width="258" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1"/>
+<text x="165.0" y="170.0" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="600" fill="#3C3489">Weight registry (HTTP)</text>
+<text x="165.0" y="190.0" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#534AB7">Versions, leases, replicas</text>
+<rect x="36" y="227" width="258" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1"/>
+<text x="165.0" y="246.0" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="600" fill="#3C3489">TransferQueue</text>
+<text x="165.0" y="266.0" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#534AB7">Prompts and trajectories</text>
+<rect x="36" y="303" width="258" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1"/>
+<text x="165.0" y="322.0" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="600" fill="#3C3489">Dispatcher and agent loops</text>
+<text x="165.0" y="342.0" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#534AB7">Claim prompts, call vLLM</text>
+<rect x="398" y="151" width="244" height="56" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="1"/>
+<text x="520.0" y="170.0" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="600" fill="#085041">Launcher sidecar</text>
+<text x="520.0" y="190.0" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#0F6E56">Polls, pauses, reports</text>
+<rect x="398" y="265" width="244" height="72" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="1"/>
+<text x="520.0" y="292.0" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="600" fill="#085041">vllm serve + verl plugin</text>
+<text x="520.0" y="312.0" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#0F6E56">Official build, pulls weights</text>
+<line x1="165" y1="131" x2="165" y2="149" stroke="#5F5E5A" stroke-width="1.2" marker-end="url(#a)"/>
+<line x1="165" y1="283" x2="165" y2="301" stroke="#5F5E5A" stroke-width="1.2" marker-end="url(#a)"/>
+<line x1="398" y1="179" x2="298" y2="179" stroke="#5F5E5A" stroke-width="1.2" marker-end="url(#a)"/>
+<text x="345" y="170" text-anchor="middle" font-size="12" fill="#5F5E5A">poll</text>
+<line x1="520" y1="207" x2="520" y2="263" stroke="#5F5E5A" stroke-width="1.2" marker-end="url(#a)"/>
+<line x1="294" y1="322" x2="394" y2="322" stroke="#5F5E5A" stroke-width="1.2" marker-end="url(#a)"/>
+<text x="345" y="313" text-anchor="middle" font-size="12" fill="#5F5E5A">HTTP</text>
+<path d="M296 103 L651 103 L651 290 L646 290" fill="none" stroke="#D85A30" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#w)"/>
+<text x="520" y="94" text-anchor="middle" font-size="12" fill="#5F5E5A">One-sided RDMA read of weights</text>
+<line x1="40" y1="402" x2="70" y2="402" stroke="#D85A30" stroke-width="1.6" stroke-dasharray="6 4"/>
+<text x="78" y="406" text-anchor="start" font-size="12" fill="#5F5E5A">Weight bytes, read by the rollout side</text>
+<line x1="340" y1="402" x2="370" y2="402" stroke="#5F5E5A" stroke-width="1.2" marker-end="url(#a)"/>
+<text x="378" y="406" text-anchor="start" font-size="12" fill="#5F5E5A">HTTP and control calls</text>
+</svg>

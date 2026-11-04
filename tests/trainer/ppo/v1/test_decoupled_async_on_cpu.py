@@ -149,3 +149,43 @@ def test_resume_resets_inflight_prompts_to_pending(tq_init):
     keys = set((tq.kv_list(partition_id=partition_id) or {}).get(partition_id, {}))
     assert f"{statuses['running']}_0_0" not in keys, "the interrupted session's trajectory is cleared"
     assert f"{statuses['finished']}_0_0" in keys
+
+
+def _external_stub(monkeypatch, replicas_per_call):
+    """A decoupled_async trainer with external rollout, whose registry returns `replicas_per_call` in turn."""
+    from verl.checkpoint_engine.transport import ReplicaInfo
+
+    trainer = _stub()
+    trainer._external_rollout = True
+    trainer.weight_update_agents, trainer._weight_update_agent_runs, trainer._prompt_dispatcher_run = [], [], None
+    trainer.mode_config = SimpleNamespace(
+        min_version_lag=1, init_timeout=5, external_rollout=SimpleNamespace(heartbeat_timeout=60)
+    )
+    trainer.mode_config.get = lambda key, default=None: getattr(trainer.mode_config, key, default)
+    calls = iter(replicas_per_call)
+    last = {}
+
+    def registry_call(method, *args):
+        assert method == "list_replicas"
+        nonlocal last
+        last = next(calls, last)
+        return {rid: ReplicaInfo(url=f"http://{rid}", version=v, age=age) for rid, (v, age) in last.items()}
+
+    monkeypatch.setattr(trainer, "_registry_call", registry_call)
+    monkeypatch.setattr(mode_module.time, "sleep", lambda seconds: None)
+    return trainer
+
+
+def test_external_rollout_waits_for_every_server(monkeypatch):
+    trainer = _external_stub(
+        monkeypatch,
+        [{"a": (3, 0), "b": (2, 0)}, {"a": (3, 0), "b": (2, 0)}, {"a": (3, 0), "b": (3, 0)}],
+    )
+    trainer._wait_for_replicas(3)
+    assert trainer._replica_versions() == [3, 3]
+
+
+def test_external_rollout_fails_on_a_silent_server(monkeypatch):
+    trainer = _external_stub(monkeypatch, [{"a": (3, 0), "b": (2, 120)}])
+    with pytest.raises(RuntimeError, match="stopped reporting"):
+        trainer._check_rollout()
